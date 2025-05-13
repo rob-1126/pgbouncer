@@ -158,13 +158,5 @@ bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 		gss_release_name(&lmin_s, &server->gss.name);
 
 	return res;
-/*
-	slog_debug(server, "SCRAM client-final-message = \"%s\"", client_final_message);
-	slog_debug(server, "P: send SASLResponse");
-	// todo free goutput buffer?
-	free(client_final_message);
-
-*/
-
 
 }

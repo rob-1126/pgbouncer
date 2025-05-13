@@ -381,7 +381,6 @@ static bool login_md5_psw(PgSocket *server, const uint8_t *salt)
 	return send_password(server, txt);
 }
 
-
 static bool login_scram_sha_256(PgSocket *server)
 {
 	PgCredentials *credentials = get_srv_psw(server);
