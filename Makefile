@@ -17,6 +17,7 @@ pgbouncer_SOURCES = \
 	src/ldapauth.c \
 	src/pktbuf.c \
 	src/pooler.c \
+	src/proto_fromlibpq.c \
 	src/proto.c \
 	src/prepare.c \
 	src/sbuf.c \
