@@ -195,6 +195,10 @@ char *cf_server_tls_cert_file;
 char *cf_server_tls_key_file;
 char *cf_server_tls_ciphers;
 
+char *cf_server_krb_servername;
+char *cf_server_krb_spn;
+char *cf_server_krb_host;
+
 int cf_max_prepared_statements;
 
 /*
@@ -311,6 +315,9 @@ static const struct CfKey bouncer_params [] = {
 	CF_ABS("server_connect_timeout", CF_TIME_USEC, cf_server_connect_timeout, 0, "15"),
 	CF_ABS("server_fast_close", CF_INT, cf_server_fast_close, 0, "0"),
 	CF_ABS("server_idle_timeout", CF_TIME_USEC, cf_server_idle_timeout, 0, "600"),
+	CF_ABS("server_krb_servername", CF_STR, cf_server_krb_servername, 0, ""),
+	CF_ABS("server_krb_spn", CF_STR, cf_server_krb_spn, 0, ""),
+	CF_ABS("server_krb_host", CF_STR, cf_server_krb_host, 0, ""),
 	CF_ABS("server_lifetime", CF_TIME_USEC, cf_server_lifetime, 0, "3600"),
 	CF_ABS("server_login_retry", CF_TIME_USEC, cf_server_login_retry, 0, "15"),
 	CF_ABS("server_reset_query", CF_STR, cf_server_reset_query, 0, "DISCARD ALL"),
@@ -995,6 +1002,10 @@ static void cleanup(void)
 	xfree(&cf_server_tls_cert_file);
 	xfree(&cf_server_tls_key_file);
 	xfree(&cf_server_tls_ciphers);
+
+	xfree(&cf_server_krb_host);
+	xfree(&cf_server_krb_servername);
+	xfree(&cf_server_krb_spn);
 
 	xfree((char **)&cf_logfile);
 	xfree((char **)&cf_syslog_ident);

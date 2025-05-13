@@ -569,6 +569,9 @@ struct PgDatabase {
 	 * configuration
 	 */
 	char *host;		/* host or unix socket name */
+	char *server_krb_servername;
+	char *server_krb_host;
+	char *server_krb_spn;
 	int port;
 	int pool_size;		/* max server connections in one pool */
 	int min_pool_size;	/* min server connections in one pool */
@@ -825,6 +828,9 @@ extern char *cf_server_check_query;
 extern bool empty_server_check_query;
 extern usec_t cf_server_check_delay;
 extern int cf_server_fast_close;
+extern char *cf_server_krb_servername;
+extern char *cf_server_krb_spn;
+extern char *cf_server_krb_host;
 extern usec_t cf_server_connect_timeout;
 extern usec_t cf_server_login_retry;
 extern usec_t cf_query_timeout;

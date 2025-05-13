@@ -417,7 +417,7 @@ enum GssStatus {STATUS_OK = 0, STATUS_ERROR};
 	 snprintf(temp_gbuf.value, maxlen, "%s@%s",
 			krbsrvname, host);
 
-     slog_info(server, "asking for target service principal %s", temp_gbuf.value);
+     slog_info(server, "asking for target service principal %s", (char *)temp_gbuf.value);
 
      temp_gbuf.length = strlen(temp_gbuf.value);
 	 // GSS_C_NT_HOSTBASED_SERVICE tells it to map service@host to service/primary-host@realm
@@ -514,7 +514,7 @@ static bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *da
 
 	if (goutbuf.length != 0)
 	{
-		slog_info(server, "Sending GSSResponseMessage of length %i", goutbuf.length);
+		slog_info(server, "Sending GSSResponseMessage of length %zu", goutbuf.length);
 		SEND_GSSResponseMessage(res, server, goutbuf.value, goutbuf.length);
 	}
 	gss_release_buffer(&lmin_s, &goutbuf);
@@ -702,7 +702,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 			return false;
 		res = login_md5_psw(server, salt);
 		break;
-	case AUTH_GSS:
+	case AUTH_REQ_GSS:
 	{
 		unsigned len;
 		const uint8_t *data;
@@ -714,7 +714,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		res = login_gss_cont(server, len, data);
 		break;
 	}
-	case AUTH_GSS_CONT:
+	case AUTH_REQ_GSS_CONT:
 	{
 		unsigned len;
 		const uint8_t *data;
