@@ -119,6 +119,22 @@ if test "$with_systemd" = yes; then
   AC_SEARCH_LIBS(sd_notify, systemd)
 fi
 
+dnl Check for GSSAPI authentication support
+gss_support=no
+AC_ARG_WITH(gss,
+  AC_HELP_STRING([--with-gss], [build with GSSAPI support]),
+  [ GSS=
+    if test "$withval" != no; then
+      # Look for GSSAPI header and lib
+      AC_CHECK_HEADERS(gssapi.h, [have_gss_header=y])
+      AC_SEARCH_LIBS(gss_accept_sec_context, [gssapi_krb5 gssapi], [have_libgss=t])
+      if test x"${have_gss_header}" != x -a x"${have_libgss}" != x; then
+        gss_support=yes
+        AC_DEFINE(HAVE_GSS, 1, [GSSAPI support])
+      fi
+    fi
+  ], [])
+
 ##
 ## DNS backend
 ##
@@ -218,6 +234,7 @@ else
   echo "  adns    = compat"
 fi
 echo "  pam     = $pam_support"
+echo "  gss     = $gss_support"
 echo "  ldap    = $ldap_support"
 echo "  systemd = $with_systemd"
 echo "  tls     = $tls_support"

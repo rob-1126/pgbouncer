@@ -56,6 +56,12 @@
 #define sd_notifyf(ue, f, ...)
 #endif
 
+#ifdef HAVE_GSSAPI_H
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_ext.h>
+#include <gssapi/gssapi_krb5.h>
+#endif
+
 
 /* global libevent handle */
 extern struct event_base *pgb_event_base;
@@ -726,6 +732,25 @@ struct PgSocket {
 #ifdef HAVE_LDAP
 	char ldap_parameters[MAX_LDAP_CONFIG];
 #endif
+
+#ifdef HAVE_GSS
+	struct GSSState {
+			enum {
+					GSS_INITIAL,
+					GSS_CONTINUE,
+					GSS_DONE
+			} state;
+			gss_cred_id_t server_credentials;
+			gss_cred_id_t delegated_credentials;
+			gss_buffer_desc outbuf; /* GSSAPI output token buffer */
+			gss_cred_id_t cred;     /* GSSAPI connection cred's */
+			gss_ctx_id_t ctx;       /* GSSAPI connection context */
+			gss_name_t name;        /* GSSAPI client name */
+			gss_buffer_desc client_name; /* Tempoary */
+			OM_uint32 flags;
+	} gss;
+#endif
+
 
 	VarCache vars;		/* state of interesting server parameters */
 
