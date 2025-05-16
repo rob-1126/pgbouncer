@@ -8,11 +8,13 @@
  *
  *-------------------------------------------------------------------------
  */
+#include <krb5.h>      /* for krb5_get_default_realm() */
 #include <gssapi/gssapi.h>
 #include <gssapi/gssapi_ext.h>
 #include "bouncer.h"
 #include "scram.h"
 #include "proto_fromlibpq.h"
+
 
 // hrmm probably should find a better name for this
 enum GssStatus {STATUS_OK = 0, STATUS_ERROR};
@@ -42,63 +44,107 @@ log_gss_status(const char *label, OM_uint32 code, int status_type)
     } while (msg_ctx);
 }
 
-/* Load, import, canonicalize, and log the fully-qualified service principal name */
 static bool
 gss_load_servicename(PgSocket *server)
 {
-    OM_uint32        maj_stat, min_stat;
+    OM_uint32        maj_stat, min_stat, ctx_min;
     gss_buffer_desc  buf;
     const char      *base_spn;
     char            *spn_alloc = NULL;
     gss_OID          name_type;
 
-    /* Determine SPN string */
     if (cf_server_krb_spn && *cf_server_krb_spn) {
-        base_spn = cf_server_krb_spn;
+        /* admin explicitly set it → treat as full principal */
+        base_spn  = cf_server_krb_spn;
+        name_type = GSS_C_NT_USER_NAME;
     } else {
-        size_t len = strlen("postgres@") + strlen(server->pool->db->host) + 1;
-        spn_alloc = malloc(len);
-        if (!spn_alloc) {
-            slog_error(server, "out of memory allocating SPN buffer");
-            return false;
+        /* no override → build postgres/host@REALM automatically */
+        krb5_context  kctx = NULL;
+        char         *default_realm = NULL;
+
+        if (krb5_init_context(&kctx) == 0 &&
+            krb5_get_default_realm(kctx, &default_realm) == 0)
+        {
+            size_t len = strlen("postgres/") +
+                         strlen(server->pool->db->host) +
+                         1 +  /* “@” */
+                         strlen(default_realm) +
+                         1;   /* NUL */
+            spn_alloc = malloc(len);
+            if (!spn_alloc) {
+                slog_error(server, "out of memory allocating SPN buffer");
+                krb5_free_context(kctx);
+                return false;
+            }
+            snprintf(spn_alloc, len, "postgres/%s@%s",
+                     server->pool->db->host, default_realm);
+
+            krb5_free_default_realm(kctx, default_realm);
+            krb5_free_context(kctx);
+
+            base_spn  = spn_alloc;
+            name_type = GSS_C_NT_USER_NAME;
+        } else {
+            /* fallback (should almost never happen): host‐based */
+            size_t len = strlen("postgres@") +
+                         strlen(server->pool->db->host) +
+                         1;
+            spn_alloc = malloc(len);
+            if (!spn_alloc) {
+                slog_error(server, "out of memory allocating SPN buffer");
+                if (kctx) krb5_free_context(kctx);
+                return false;
+            }
+            snprintf(spn_alloc, len, "postgres@%s", server->pool->db->host);
+            if (kctx) krb5_free_context(kctx);
+
+            base_spn  = spn_alloc;
+            name_type = GSS_C_NT_HOSTBASED_SERVICE;
         }
-        snprintf(spn_alloc, len, "postgres@%s", server->pool->db->host);
-        base_spn = spn_alloc;
     }
 
     buf.value  = (void *)base_spn;
     buf.length = strlen(base_spn);
 
     slog_info(server, "importing service principal %s", base_spn);
-
-    /* 
-     * If the SPN string contains a slash, treat it as a full principal
-     * (e.g. "postgres/127.0.0.1@REALM") and use USER_NAME;
-     * otherwise use HOSTBASED_SERVICE for "service@host".
-     */
-    if (strchr(base_spn, '/')) {
-        name_type = GSS_C_NT_USER_NAME;
-    } else {
-        name_type = GSS_C_NT_HOSTBASED_SERVICE;
-    }
-
     maj_stat = gss_import_name(&min_stat,
                                &buf,
                                name_type,
                                &server->gss.name);
-
     if (spn_alloc)
         free(spn_alloc);
 
     if (maj_stat != GSS_S_COMPLETE) {
-        slog_error(server, "gss_import_name failed maj=%u min=%u", maj_stat, min_stat);
+        slog_error(server, "gss_import_name failed maj=%u min=%u",
+                   maj_stat, min_stat);
         log_gss_status("GSS import major", maj_stat, GSS_C_GSS_CODE);
         log_gss_status("GSS import minor", min_stat,  GSS_C_MECH_CODE);
         return false;
     }
 
-    /* Display the full principal including realm */
+    /* Canonicalize for Kerberos mech and display the true principal */
     {
+        gss_name_t     canon = GSS_C_NO_NAME;
+        maj_stat = gss_canonicalize_name(
+            &min_stat,
+            server->gss.name,
+            (gss_OID) gss_mech_krb5,
+            &canon
+        );
+        if (maj_stat != GSS_S_COMPLETE) {
+            slog_error(server, "gss_canonicalize_name failed maj=%u min=%u",
+                       maj_stat, min_stat);
+            log_gss_status("GSS canonicalize major", maj_stat, GSS_C_GSS_CODE);
+            log_gss_status("GSS canonicalize minor", min_stat, GSS_C_MECH_CODE);
+            gss_release_name(&ctx_min, &server->gss.name);
+            return false;
+        }
+        gss_release_name(&ctx_min, &server->gss.name);
+        server->gss.name = canon;
+    }
+
+    {
+        /* now this will include “@YOURREALM” on host-based fallbacks too */
         gss_buffer_desc namebuf;
         OM_uint32       dbg_min;
         gss_display_name(&dbg_min, server->gss.name, &namebuf, NULL);

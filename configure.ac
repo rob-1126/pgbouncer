@@ -131,6 +131,18 @@ AC_ARG_WITH(gss,
       if test x"${have_gss_header}" != x -a x"${have_libgss}" != x; then
         gss_support=yes
         AC_DEFINE(HAVE_GSS, 1, [GSSAPI support])
+
+        dnl ---- now check for the Kerberos 5 library itself ----
+        AC_CHECK_LIB(krb5, krb5_init_context,
+          [ krb5_support=yes
+            AC_DEFINE(HAVE_KRB5, 1, [Kerberos 5 library found]) ],
+          [ krb5_support=no
+            AC_MSG_WARN([Kerberos 5 library not found; default‐realm support will be disabled]) ]
+        )
+        if test "$krb5_support" = yes; then
+          AC_SUBST([KRB5_LIBS], [-lkrb5])
+          LDFLAGS="$LDFLAGS $KRB5_LIBS"
+        fi
       fi
     fi
   ], [])
@@ -237,5 +249,6 @@ echo "  pam     = $pam_support"
 echo "  gss     = $gss_support"
 echo "  ldap    = $ldap_support"
 echo "  systemd = $with_systemd"
+echo "  krb5    = $krb5_support"
 echo "  tls     = $tls_support"
 echo ""
