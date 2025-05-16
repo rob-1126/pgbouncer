@@ -8,7 +8,8 @@
  *
  *-------------------------------------------------------------------------
  */
-
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_ext.h>
 #include "bouncer.h"
 #include "scram.h"
 #include "proto_fromlibpq.h"
@@ -18,144 +19,188 @@ enum GssStatus {STATUS_OK = 0, STATUS_ERROR};
 
 
 
- /*
-  * Try to load service name for a connection
-  */
-static int
+
+/* Helper to translate GSSAPI status codes into human-readable text */
+static void
+log_gss_status(const char *label, OM_uint32 code, int status_type)
+{
+    OM_uint32 msg_ctx = 0, min_stat;
+    gss_buffer_desc status_msg;
+
+    do {
+        gss_display_status(
+            &min_stat,
+            code,
+            status_type,
+            GSS_C_NO_OID,
+            &msg_ctx,
+            &status_msg
+        );
+        slog_error(NULL, "%s: %.*s", label,
+                   (int)status_msg.length, (char *)status_msg.value);
+        gss_release_buffer(&min_stat, &status_msg);
+    } while (msg_ctx);
+}
+
+/* Load, import, canonicalize, and log the fully-qualified service principal name */
+static bool
 gss_load_servicename(PgSocket *server)
 {
-    OM_uint32         maj_stat,
-                      min_stat;
-    gss_buffer_desc   temp_gbuf;
-    const char       *spn;
-    char             *spn_alloc = NULL;
+    OM_uint32        maj_stat, min_stat;
+    gss_buffer_desc  buf;
+    const char      *base_spn;
+    char            *spn_alloc = NULL;
+    gss_OID          name_type;
 
-    /* 1) explicit override wins */
+    /* Determine SPN string */
     if (cf_server_krb_spn && *cf_server_krb_spn) {
-        spn = cf_server_krb_spn;
-    }
-    else {
-        /* default to "postgres@<host>" */
+        base_spn = cf_server_krb_spn;
+    } else {
         size_t len = strlen("postgres@") + strlen(server->pool->db->host) + 1;
         spn_alloc = malloc(len);
         if (!spn_alloc) {
             slog_error(server, "out of memory allocating SPN buffer");
-            return STATUS_ERROR;
+            return false;
         }
         snprintf(spn_alloc, len, "postgres@%s", server->pool->db->host);
-        spn = spn_alloc;
+        base_spn = spn_alloc;
     }
 
-    temp_gbuf.value  = (void *) spn;
-    temp_gbuf.length = strlen(spn);
+    buf.value  = (void *)base_spn;
+    buf.length = strlen(base_spn);
 
-    slog_info(server, "asking for target service principal %s", spn);
-    slog_info(server, "Calling gss_import_name");
+    slog_info(server, "importing service principal %s", base_spn);
+
+    /* 
+     * If the SPN string contains a slash, treat it as a full principal
+     * (e.g. "postgres/127.0.0.1@REALM") and use USER_NAME;
+     * otherwise use HOSTBASED_SERVICE for "service@host".
+     */
+    if (strchr(base_spn, '/')) {
+        name_type = GSS_C_NT_USER_NAME;
+    } else {
+        name_type = GSS_C_NT_HOSTBASED_SERVICE;
+    }
+
     maj_stat = gss_import_name(&min_stat,
-                               &temp_gbuf,
-                               GSS_C_NT_HOSTBASED_SERVICE,
+                               &buf,
+                               name_type,
                                &server->gss.name);
-    slog_info(server,
-             "Done calling gss_import_name - maj_stat=%u min_stat=%u",
-             maj_stat, min_stat);
 
     if (spn_alloc)
         free(spn_alloc);
 
     if (maj_stat != GSS_S_COMPLETE) {
-        slog_error(server, "GSSAPI name import error");
-        return STATUS_ERROR;
+        slog_error(server, "gss_import_name failed maj=%u min=%u", maj_stat, min_stat);
+        log_gss_status("GSS import major", maj_stat, GSS_C_GSS_CODE);
+        log_gss_status("GSS import minor", min_stat,  GSS_C_MECH_CODE);
+        return false;
     }
 
-    return STATUS_OK;
+    /* Display the full principal including realm */
+    {
+        gss_buffer_desc namebuf;
+        OM_uint32       dbg_min;
+        gss_display_name(&dbg_min, server->gss.name, &namebuf, NULL);
+        slog_info(server, "using target service principal %.*s",
+                  (int)namebuf.length, (char *)namebuf.value);
+        gss_release_buffer(&dbg_min, &namebuf);
+    }
+
+    return true;
 }
 
-
-
-bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
+bool
+login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 {
-	OM_uint32	maj_stat,
-				min_stat,
-				lmin_s;
-	gss_buffer_desc ginbuf;
-	gss_buffer_desc goutbuf;
-	bool ret; /* return value of gss_load_servicename */
-	bool res; /* response from send of resulting continuation */
+    OM_uint32       maj_stat, min_stat, lmin_s;
+    gss_buffer_desc ginbuf;
+    gss_buffer_desc goutbuf = GSS_C_EMPTY_BUFFER;
+    bool            res = false;
 
-	if (GSS_INITIAL == server->gss.state) {
- 		slog_info(server, "gssapi continuation start");
-		ginbuf.length = 0;
-		ginbuf.value = NULL;
-		ret = gss_load_servicename(server);
-		if (ret != STATUS_OK)
-			return ret;
+    /* Initial leg: import & canonicalize service name */
+    if (server->gss.state == GSS_INITIAL) {
+        slog_info(server, "gssapi continuation start");
+        ginbuf.value  = NULL;
+        ginbuf.length = 0;
 
-   		server->gss.state = GSS_CONTINUE;
-  	}
-	else {
-		slog_error(server, "gssapi continuation in login_gss_cont not yet implemented");
-		ginbuf.value = malloc(datalen + 1);
-		if (!ginbuf.value) {
-			slog_error(server, "out of error allocating gssapi buffer");
-			return false;
-		}
-		memcpy(ginbuf.value, data, datalen);
+        if (!gss_load_servicename(server))
+            return false;
 
-		// TODO FIGURE OUT WHY THIS IS BORK
-		//ginbuf.value[datalen] = '\0';
-	}
-	slog_info(server, "preparing to call gss_init_sec_context");
-	server->gss.ctx = GSS_C_NO_CONTEXT;
-	maj_stat = gss_init_sec_context(&min_stat,
-								GSS_C_NO_CREDENTIAL,
-								&server->gss.ctx,
-								server->gss.name,
-								GSS_C_NO_OID,
-								GSS_C_MUTUAL_FLAG,
-								0,
-								GSS_C_NO_CHANNEL_BINDINGS,
-								(ginbuf.value == NULL) ? GSS_C_NO_BUFFER : &ginbuf,
-								NULL,
-								&goutbuf,
-								NULL,
-								NULL);
-	if(server->gss.ctx == GSS_C_NO_CONTEXT) {
-		slog_info(server, "no new gss context was created");
-	}
-	slog_info(server, "got gss_init_sec_context result %u %u", maj_stat, min_stat);
+        /* Canonicalize name for Kerberos mechanism */
+        gss_name_t canon = GSS_C_NO_NAME;
+        maj_stat = gss_canonicalize_name(
+            &min_stat,
+            server->gss.name,
+            (gss_OID) gss_mech_krb5,
+            &canon
+        );
+        slog_info(server, "gss_canonicalize_name major=%u minor=%u", maj_stat, min_stat);
+        if (maj_stat != GSS_S_COMPLETE) {
+            log_gss_status("GSS canonicalize major", maj_stat, GSS_C_GSS_CODE);
+            log_gss_status("GSS canonicalize minor", min_stat, GSS_C_MECH_CODE);
+            gss_release_name(&lmin_s, &server->gss.name);
+            return false;
+        }
 
-	if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED) {	
-		slog_info(server, "GSSAPI continuation error maj %u min %u", maj_stat, min_stat);
-		return STATUS_ERROR;
-	}
+        gss_release_name(&lmin_s, &server->gss.name);
+        server->gss.name = canon;
+        server->gss.ctx  = GSS_C_NO_CONTEXT;
+        server->gss.state = GSS_CONTINUE;
+    } else {
+        ginbuf.length = datalen;
+        ginbuf.value  = malloc(datalen);
+        if (!ginbuf.value) {
+            slog_error(server, "out of memory allocating gssapi buffer");
+            return false;
+        }
+        memcpy(ginbuf.value, data, datalen);
+    }
 
-	if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED) {	
-		slog_info(server, "GSSAPI continuation error maj %u min %u", maj_stat, min_stat);
-		return STATUS_ERROR;
-	}
+    /* Perform next GSS handshake step */
+    slog_info(server, "preparing to call gss_init_sec_context");
+    maj_stat = gss_init_sec_context(
+        &min_stat,
+        GSS_C_NO_CREDENTIAL,
+        &server->gss.ctx,
+        server->gss.name,
+        (gss_const_OID) gss_mech_krb5,
+        GSS_C_MUTUAL_FLAG | GSS_C_INTEG_FLAG | GSS_C_SEQUENCE_FLAG,
+        0,
+        GSS_C_NO_CHANNEL_BINDINGS,
+        (ginbuf.value ? &ginbuf : GSS_C_NO_BUFFER),
+        NULL,
+        &goutbuf,
+        NULL,
+        NULL
+    );
+    slog_info(server, "got gss_init_sec_context result %u minor %u", maj_stat, min_stat);
 
-	if (ginbuf.value)
-		free(ginbuf.value);
+    if (ginbuf.value) free(ginbuf.value);
 
-	if (goutbuf.length != 0)
-	{
-		slog_info(server, "Sending GSSResponseMessage of length %zu", goutbuf.length);
-		SEND_GSSResponseMessage(res, server, goutbuf.value, goutbuf.length);
-	}
-	gss_release_buffer(&lmin_s, &goutbuf);
+    /* Error handling */
+    if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED) {
+        slog_error(server, "GSSAPI continuation error maj %u min %u", maj_stat, min_stat);
+        log_gss_status("GSS major status", maj_stat, GSS_C_GSS_CODE);
+        log_gss_status("GSS minor status", min_stat, GSS_C_MECH_CODE);
+        gss_release_buffer(&lmin_s, &goutbuf);
+        gss_release_name(&lmin_s, &server->gss.name);
+        gss_delete_sec_context(&lmin_s, &server->gss.ctx, GSS_C_NO_BUFFER);
+        return false;
+    }
 
-	if (maj_stat != GSS_S_COMPLETE && maj_stat != GSS_S_CONTINUE_NEEDED)
-	{
-		slog_error(server, "gssapi continuation error - maj_stat value was %u", maj_stat);
-		gss_release_name(&lmin_s, &server->gss.name);
-		if (server->gss.state)
-			gss_delete_sec_context(&lmin_s, &server->gss.ctx, GSS_C_NO_BUFFER);
-		return false;
-	}
+    /* Send token to client */
+    if (goutbuf.length > 0) {
+        slog_info(server, "Sending GSSResponseMessage of length %zu", goutbuf.length);
+        SEND_GSSResponseMessage(res, server, goutbuf.value, goutbuf.length);
+        gss_release_buffer(&lmin_s, &goutbuf);
+    }
 
-	if (maj_stat == GSS_S_COMPLETE)
-		gss_release_name(&lmin_s, &server->gss.name);
+    /* Finalize */
+    if (maj_stat == GSS_S_COMPLETE) {
+        gss_release_name(&lmin_s, &server->gss.name);
+        server->gss.state = GSS_DONE;
+    }
 
-	return res;
-
+    return true;
 }
