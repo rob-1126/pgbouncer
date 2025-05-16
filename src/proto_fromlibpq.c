@@ -21,56 +21,55 @@ enum GssStatus {STATUS_OK = 0, STATUS_ERROR};
  /*
   * Try to load service name for a connection
   */
- static int gss_load_servicename(PgSocket *server)
- {
-     OM_uint32   maj_stat,
-                 min_stat;
-     int         maxlen;
-     gss_buffer_desc temp_gbuf;
-     char       *host;
-	 char		*krbsrvname;
+static int
+gss_load_servicename(PgSocket *server)
+{
+    OM_uint32         maj_stat,
+                      min_stat;
+    gss_buffer_desc   temp_gbuf;
+    const char       *spn;
+    char             *spn_alloc = NULL;
 
-	 krbsrvname = "postgres";
-     //host = "kpsql.robs-desktop-again.astronomer-trials.com";
-	 //PGconn *conn = server->pool->db->host;
-     //host = PQhost(conn);
-     host = server->pool->db->host;
-	 
-     /*
-      * Import service principal name so the proper ticket can be acquired by
-      * the GSSAPI system.
-      */
-     maxlen = strlen(krbsrvname) + strlen(host) + 2;
-     temp_gbuf.value = (char *) malloc(maxlen);
-     if (!temp_gbuf.value)
-     {
-         slog_error(server, "ran out of memory allocating buffer during gss_load_servicename");
-         return STATUS_ERROR;
-     }
+    /* 1) explicit override wins */
+    if (cf_server_krb_spn && *cf_server_krb_spn) {
+        spn = cf_server_krb_spn;
+    }
+    else {
+        /* default to "postgres@<host>" */
+        size_t len = strlen("postgres@") + strlen(server->pool->db->host) + 1;
+        spn_alloc = malloc(len);
+        if (!spn_alloc) {
+            slog_error(server, "out of memory allocating SPN buffer");
+            return STATUS_ERROR;
+        }
+        snprintf(spn_alloc, len, "postgres@%s", server->pool->db->host);
+        spn = spn_alloc;
+    }
 
-	 snprintf(temp_gbuf.value, maxlen, "%s@%s",
-			krbsrvname, host);
+    temp_gbuf.value  = (void *) spn;
+    temp_gbuf.length = strlen(spn);
 
-     slog_info(server, "asking for target service principal %s", (char *)temp_gbuf.value);
+    slog_info(server, "asking for target service principal %s", spn);
+    slog_info(server, "Calling gss_import_name");
+    maj_stat = gss_import_name(&min_stat,
+                               &temp_gbuf,
+                               GSS_C_NT_HOSTBASED_SERVICE,
+                               &server->gss.name);
+    slog_info(server,
+             "Done calling gss_import_name - maj_stat=%u min_stat=%u",
+             maj_stat, min_stat);
 
-     temp_gbuf.length = strlen(temp_gbuf.value);
-	 // GSS_C_NT_HOSTBASED_SERVICE tells it to map service@host to service/primary-host@realm
-	 // and is what is used by the postgres client so we blindly follow
-     slog_info(server, "Calling gss_import_name");
-     maj_stat = gss_import_name(&min_stat, &temp_gbuf,
-                                GSS_C_NT_HOSTBASED_SERVICE, &server->gss.name);
-	 
+    if (spn_alloc)
+        free(spn_alloc);
 
-     slog_info(server, "Done calling gss_import_name - maj_stat value was %u min_stat value was %u", maj_stat, min_stat);
-     free(temp_gbuf.value);
-  
-     if (maj_stat != GSS_S_COMPLETE)
-     {
-		slog_error(server, "GSSAPI name import error");
-         return STATUS_ERROR;
-     }
-     return STATUS_OK;
- }
+    if (maj_stat != GSS_S_COMPLETE) {
+        slog_error(server, "GSSAPI name import error");
+        return STATUS_ERROR;
+    }
+
+    return STATUS_OK;
+}
+
 
 
 bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
