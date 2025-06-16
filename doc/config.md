@@ -902,11 +902,11 @@ Default: `disable`
 
 ### server_krb_spn = 
 
-Whether pgbouncer should attempt to negotiate GSSAPI (kerberos) authentication with the upstream postgres server.
-
-Default: blank, auto-generates by default, equivalent to `postgres/<canonicalized-hostname of postgres server>@<default kerberos realm from libkrb5>`.
+What kerberos service-principal pgbouncer should demand be presented by the upstream postgres server.
 
 Does not apply if server_gssauth_negotiate is set to `disable`
+
+Default: blank, auto-generates by default, equivalent to `postgres/<canonicalized-hostname of postgres server>@<default kerberos realm from libkrb5>`.
 
 ### server_tls_sslmode
 
@@ -1245,6 +1245,14 @@ Default: not set, meaning to use a Unix socket
 ### port
 
 Default: 5432
+
+### server_krb_spn = 
+
+What kerberos service-principal pgbouncer should demand be presented by the upstream postgres server.
+
+Does not apply if server_gssauth_negotiate is set to `disable`
+
+Default: blank, auto-generates by default, equivalent to `postgres/<canonicalized-hostname of postgres server>@<default kerberos realm from libkrb5>`.
 
 ### user
 
