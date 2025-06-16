@@ -66,6 +66,10 @@
 /* global libevent handle */
 extern struct event_base *pgb_event_base;
 
+enum ServerGssAuth {
+	SERVER_GSSAUTH_DISABLE,		/* no GSSAPI auth */
+	SERVER_GSSAUTH_ALLOW,		/* GSSAPI auth enabled */
+};
 
 /* each state corresponds to a list */
 enum SocketState {
@@ -160,6 +164,7 @@ typedef struct PgDatabase PgDatabase;
 typedef struct PgPool PgPool;
 typedef struct PgStats PgStats;
 typedef union PgAddr PgAddr;
+typedef enum ServerGssAuth ServerGssAuth;
 typedef enum SocketState SocketState;
 typedef enum PacketCallbackFlag PacketCallbackFlag;
 typedef struct PktHdr PktHdr;
@@ -826,6 +831,7 @@ extern char *cf_server_check_query;
 extern bool empty_server_check_query;
 extern usec_t cf_server_check_delay;
 extern int cf_server_fast_close;
+extern enum ServerGssAuth cf_server_gssauth_negotiate;
 extern char *cf_server_krb_spn;
 extern usec_t cf_server_connect_timeout;
 extern usec_t cf_server_login_retry;

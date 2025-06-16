@@ -544,6 +544,12 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		unsigned len;
 		const uint8_t *data;
 
+		if(cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
+			slog_debug(server, "gss auth request received but server_gssauth_negotiate not set to allow: %u", cmd);
+			res = false;
+			break;
+		}
+
 		slog_debug(server, "S: req GSS");
 		len = mbuf_avail_for_read(&pkt->data);
 		if (!mbuf_get_bytes(&pkt->data, len, &data))
@@ -555,6 +561,12 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 	{
 		unsigned len;
 		const uint8_t *data;
+
+		if(cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
+			slog_debug(server, "gss continuation received but server_gssauth_negotiate not set to allow: %u", cmd);
+			res = false;
+			break;
+		}
 
 		slog_debug(server, "S: req GSS continuation");
 		len = mbuf_avail_for_read(&pkt->data);
