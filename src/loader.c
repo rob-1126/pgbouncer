@@ -352,17 +352,6 @@ bool parse_database(void *base, const char *name, const char *connstr)
 				log_error("invalid server_krb_spn: %s", val);
 				goto fail;
 			}
-		} else if (strcmp("connect_timeout", key) == 0) {
-			if (!set_param_value(&cf_server_connect_timeout, val)) {
-				log_error("invalid connect_timeout: %s", val);
-				goto fail;
-			}
-		} else if (strcmp("connect_query", key) == 0) {
-			connect_query = strdup(val);
-			if (!connect_query) {
-				log_error("out of memory");
-				goto fail;
-			}
 		} else if (strcmp("load_balance_hosts", key) == 0) {
 			if (!cf_set_lookup(&load_balance_hosts_lookup, val)) {
 				log_error("invalid load_balance_hosts: %s", val);
