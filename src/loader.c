@@ -350,7 +350,6 @@ bool parse_database(void *base, const char *name, const char *connstr)
 		} else if (strcmp("server_lifetime", key) == 0) {
 			server_lifetime = atoi(val) * USEC;
 		} else if (strcmp("server_krb_spn", key) == 0) {
-			/* store per-db SPN until we have a PgDatabase to assign it to */
 			if (!set_param_value(&server_krb_spn, val)) {
 				log_error("invalid server_krb_spn: %s", val);
 				goto fail;
