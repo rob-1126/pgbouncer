@@ -51,8 +51,15 @@ static bool gss_load_servicename(PgSocket *server)
 	char *spn_alloc = NULL;
 	gss_OID name_type;
 
-	if (cf_server_krb_spn && *cf_server_krb_spn) {
-		/* admin explicitly set it → treat as full principal */
+	if (server->pool &&
+	    server->pool->db &&
+	    server->pool->db->server_krb_spn &&
+	    *server->pool->db->server_krb_spn) {
+		/* explicitly set at the db level, use it as literal complete spn */
+		base_spn = server->pool->db->server_krb_spn;
+		name_type = GSS_C_NT_USER_NAME;
+	} else if (cf_server_krb_spn && *cf_server_krb_spn) {
+		/* explicitly set on the global level, use it as literal complete spn */
 		base_spn = cf_server_krb_spn;
 		name_type = GSS_C_NT_USER_NAME;
 	} else {
@@ -121,7 +128,8 @@ static bool gss_load_servicename(PgSocket *server)
 
 	/* Canonicalize for Kerberos mech and display the true principal */
 	{
-		gss_name_t canon = GSS_C_NO_NAME;
+		gss_name_t canon;
+		canon = GSS_C_NO_NAME;
 		maj_stat = gss_canonicalize_name(
 			&min_stat,
 			server->gss.name,
@@ -162,6 +170,7 @@ bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 
 	/* Initial leg: import & canonicalize service name */
 	if (server->gss.state == GSS_INITIAL) {
+		gss_name_t canon;
 		slog_info(server, "gssapi continuation start");
 		ginbuf.value = NULL;
 		ginbuf.length = 0;
@@ -170,7 +179,7 @@ bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 			return false;
 
 		/* Canonicalize name for Kerberos mechanism */
-		gss_name_t canon = GSS_C_NO_NAME;
+		canon = GSS_C_NO_NAME;
 		maj_stat = gss_canonicalize_name(
 			&min_stat,
 			server->gss.name,
@@ -206,7 +215,7 @@ bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 		GSS_C_NO_CREDENTIAL,
 		&server->gss.ctx,
 		server->gss.name,
-		(gss_const_OID) gss_mech_krb5,
+		(gss_OID) gss_mech_krb5,
 		GSS_C_MUTUAL_FLAG | GSS_C_INTEG_FLAG | GSS_C_SEQUENCE_FLAG,
 		0,
 		GSS_C_NO_CHANNEL_BINDINGS,
@@ -235,6 +244,7 @@ bool login_gss_cont(PgSocket *server, unsigned datalen, const uint8_t *data)
 	if (goutbuf.length > 0) {
 		slog_info(server, "Sending GSSResponseMessage of length %zu", goutbuf.length);
 		SEND_GSSResponseMessage(res, server, goutbuf.value, goutbuf.length);
+		(void)res;
 		gss_release_buffer(&lmin_s, &goutbuf);
 	}
 
