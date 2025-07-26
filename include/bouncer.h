@@ -741,19 +741,19 @@ struct PgSocket {
 
 #ifdef HAVE_GSS
 	struct GSSState {
-			enum {
-					GSS_INITIAL,
-					GSS_CONTINUE,
-					GSS_DONE
-			} state;
-			gss_cred_id_t server_credentials;
-			gss_cred_id_t delegated_credentials;
-			gss_buffer_desc outbuf; /* GSSAPI output token buffer */
-			gss_cred_id_t cred;     /* GSSAPI connection cred's */
-			gss_ctx_id_t ctx;       /* GSSAPI connection context */
-			gss_name_t name;        /* GSSAPI client name */
-			gss_buffer_desc client_name; /* Tempoary */
-			OM_uint32 flags;
+		enum {
+			GSS_INITIAL,
+			GSS_CONTINUE,
+			GSS_DONE
+		} state;
+		gss_cred_id_t server_credentials;
+		gss_cred_id_t delegated_credentials;
+		gss_buffer_desc outbuf;		/* GSSAPI output token buffer */
+		gss_cred_id_t cred;		/* GSSAPI connection cred's */
+		gss_ctx_id_t ctx;		/* GSSAPI connection context */
+		gss_name_t name;		/* GSSAPI client name */
+		gss_buffer_desc client_name;		/* Tempoary */
+		OM_uint32 flags;
 	} gss;
 #endif
 

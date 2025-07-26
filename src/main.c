@@ -1164,9 +1164,9 @@ int main(int argc, char *argv[])
 	}
 
 	write_pidfile();
-	if(cf_server_gssauth_negotiate == SERVER_GSSAUTH_ALLOW) {
+	if (cf_server_gssauth_negotiate == SERVER_GSSAUTH_ALLOW) {
 		log_info("GSSAPI auth-negotiation to upstream postgres server is enabled");
-		// check to see if cf_server_krb_spn is not empty just the var	
+		// check to see if cf_server_krb_spn is not empty just the var
 		log_info("Upstream Postgres Server Kerberos SPN: %s", (cf_server_krb_spn && *cf_server_krb_spn) ? cf_server_krb_spn : "<auto-detect>");
 	}
 	log_info("process up: %s, libevent %s (%s), adns: %s, tls: %s", PACKAGE_STRING,

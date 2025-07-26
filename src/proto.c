@@ -544,7 +544,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		unsigned len;
 		const uint8_t *data;
 
-		if(cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
+		if (cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
 			slog_debug(server, "gss auth request received but server_gssauth_negotiate not set to allow: %u", cmd);
 			res = false;
 			break;
@@ -562,7 +562,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		unsigned len;
 		const uint8_t *data;
 
-		if(cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
+		if (cf_server_gssauth_negotiate != SERVER_GSSAUTH_ALLOW) {
 			slog_debug(server, "gss continuation received but server_gssauth_negotiate not set to allow: %u", cmd);
 			res = false;
 			break;
@@ -574,7 +574,6 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 			return false;
 		res = login_gss_cont(server, len, data);
 		break;
-
 	}
 	case AUTH_REQ_SASL:
 	{
