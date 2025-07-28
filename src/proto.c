@@ -22,7 +22,8 @@
 
 #include "bouncer.h"
 #include "scram.h"
-#include "proto_fromlibpq.h"
+#include "gssauth.h"
+#include "gssapi.h"
 
 /*
  * parse protocol header from struct MBuf
@@ -554,7 +555,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		len = mbuf_avail_for_read(&pkt->data);
 		if (!mbuf_get_bytes(&pkt->data, len, &data))
 			return false;
-		res = login_gss_cont(server, len, data);
+		res = gss_auth_step(server, len, data);
 		break;
 	}
 	case AUTH_REQ_GSS_CONT:
@@ -572,7 +573,7 @@ bool answer_authreq(PgSocket *server, PktHdr *pkt)
 		len = mbuf_avail_for_read(&pkt->data);
 		if (!mbuf_get_bytes(&pkt->data, len, &data))
 			return false;
-		res = login_gss_cont(server, len, data);
+		res = gss_auth_step(server, len, data);
 		break;
 	}
 	case AUTH_REQ_SASL:

@@ -7,6 +7,7 @@ pgbouncer_SOURCES = \
 	src/admin.c \
 	src/client.c \
 	src/dnslookup.c \
+	src/gssauth.c \
 	src/hba.c \
 	src/janitor.c \
 	src/loader.c \
@@ -17,7 +18,6 @@ pgbouncer_SOURCES = \
 	src/ldapauth.c \
 	src/pktbuf.c \
 	src/pooler.c \
-	src/proto_fromlibpq.c \
 	src/proto.c \
 	src/prepare.c \
 	src/sbuf.c \
